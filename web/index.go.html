@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔦</text></svg>"
+    />
+    <title>Etherlighter - {{ .IP }}</title>
+    <style>
+      :root {
+        --font: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo,
+          Consolas, "DejaVu Sans Mono", monospace;
+        --primary: #00e291;
+        --background: #111;
+        --danger: #ff4d4f;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: var(--font);
+        background-color: var(--background);
+        color: #ddd;
+        max-width: 56rem;
+        margin: 1rem auto;
+        padding: 0 0.5rem;
+      }
+
+      body > * {
+        margin-bottom: 1rem;
+      }
+
+      code {
+        font-size: 0.9rem;
+        color: var(--primary);
+      }
+
+      button {
+        --color: var(--primary);
+
+        display: inline-block;
+        padding: 0.3rem 0.7rem;
+        cursor: pointer;
+        background-color: transparent;
+        text-decoration: none;
+        outline: none;
+        border: 1px solid var(--color);
+        color: var(--color);
+        font-family: var(--font);
+        font-size: 1rem;
+      }
+
+      button:hover {
+        background-color: var(--color);
+        color: var(--background);
+        transition: all 0.2s;
+      }
+
+      button.danger {
+        --color: var(--danger);
+      }
+
+      hr {
+        border: none;
+        border-top: 1px dashed #eee;
+        margin: 2rem 0;
+      }
+
+      .ports {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: center;
+      }
+
+      .port {
+        --size: 1.8rem;
+
+        display: flex;
+        flex: 1;
+        cursor: pointer;
+        height: var(--size);
+        width: var(--size);
+        min-width: var(--size);
+        max-width: var(--size);
+        position: relative;
+        margin-bottom: 2rem;
+        border: 2px solid transparent;
+      }
+
+      .port[aria-selected] {
+        outline: 2px solid var(--primary);
+        border-color: var(--background);
+      }
+
+      .port[aria-selected] > .port-idx {
+        color: var(--primary);
+        font-weight: bold;
+      }
+
+      .port-idx {
+        position: absolute;
+        top: 175%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 0.8rem;
+        user-select: none;
+      }
+    </style>
+    <script type="module">
+      const rainbow = (n) =>
+        Array.from({ length: n }, (_, i) => {
+          const f = 360 / n;
+          const h = (f * i) % 360;
+          return `hsl(${h}, 100%, 50%)`;
+        });
+
+      const rgb = (color) => {
+        const [r, g, b] = color
+          .slice(4, -1)
+          .split(",")
+          .map((c) => +c);
+        return { r, g, b: b };
+      };
+
+      const selectedPorts = () =>
+        document.querySelectorAll(".port[aria-selected]");
+
+      let colorPicker = document.getElementById("color-picker");
+      colorPicker.addEventListener("input", ({ target }) => {
+        const color = target.value;
+        ports.forEach((port) => {
+          if (port.hasAttribute("aria-selected")) {
+            port.style.backgroundColor = color;
+          }
+        });
+      });
+
+      let bulkSelector = document.querySelector("#bulk-selector");
+      const updateSelector = () => {
+        let numSelected = selectedPorts().length;
+        let label = bulkSelector.labels[0];
+
+        if (numSelected === 0) {
+          bulkSelector.indeterminate = false;
+          bulkSelector.checked = false;
+          label.innerText = "None selected";
+        } else if (numSelected === ports.length) {
+          bulkSelector.indeterminate = false;
+          bulkSelector.checked = true;
+          label.innerText = "All selected";
+        } else {
+          bulkSelector.indeterminate = true;
+          label.innerText = `${numSelected} selected`;
+        }
+      };
+      bulkSelector.addEventListener("change", (event) => {
+        event.preventDefault();
+
+        if (event.target.checked) {
+          ports.forEach((port) => {
+            port.setAttribute("aria-selected", "");
+          });
+        } else {
+          ports.forEach((port) => {
+            port.removeAttribute("aria-selected");
+          });
+        }
+
+        updateSelector();
+      });
+
+      const togglePort = (port) => {
+        port.toggleAttribute("aria-selected");
+        updateSelector();
+      };
+
+      const ports = document.querySelectorAll(".port");
+      ports.forEach((port) => {
+        port.addEventListener("click", () => togglePort(port));
+        port.addEventListener(
+          "keydown",
+          (event) => event.key === " " && togglePort(port)
+        );
+      });
+      rainbow(ports.length).forEach((color, i) => {
+        ports[i].style.backgroundColor = color;
+      });
+
+      document.getElementById("apply").addEventListener("click", async () => {
+        const data = Array.from(ports).map((port) => ({
+          index: +port.dataset.index,
+          color: rgb(port.style.backgroundColor),
+        }));
+
+        if (!confirm("Apply the colors to the selected device ports?")) {
+          return;
+        }
+
+        const response = await fetch("/api/port-colors", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(data),
+        });
+
+        if (response.ok) {
+          alert("Sent to device!");
+        } else {
+          alert(`Failed: ${await response.text()}`);
+        }
+      });
+
+      document.querySelectorAll("button[data-mode]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const mode = button.dataset.mode;
+
+          if (!confirm(`Set the mode to ${button.innerText}?`)) {
+            return;
+          }
+
+          const response = await fetch("/api/mode", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ mode }),
+          });
+
+          if (response.ok) {
+            alert("Sent to device!");
+          } else {
+            alert(`Failed: ${await response.text()}`);
+          }
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <h1>
+      Etherlighter
+      <span role="img" aria-label="flashlight">🔦</span>
+    </h1>
+    <div>
+      <div>🌐 IP: <code>{{ .IP }}</code></div>
+      <div>🪪 Hostname: <code>{{ .Hostname }}</code></div>
+      <div>📠 Model: <code>{{ .Model }}</code></div>
+      <div>🕒 Uptime: <code>{{ .Uptime }}</code></div>
+    </div>
+
+    <hr />
+
+    <h2>Port Colors</h2>
+
+    <div>
+      {{ range .Layout }} {{ $rows := . }}
+      <div class="ports">
+        {{ range $rows }} {{ $cols := . }}
+        <div
+          tabindex="0"
+          class="port"
+          data-index="{{ . }}"
+          aria-label="Port {{ . }}"
+        >
+          <span class="port-idx">{{ . }}</span>
+        </div>
+        {{ end }}
+      </div>
+      {{ end }}
+    </div>
+    <div
+      style="display: flex; justify-content: space-between; align-self: center"
+    >
+      <div>
+        <input type="color" id="color-picker" name="color" value="#ffffff" />
+        <label for="color-picker">👈 Select a Color</label>
+      </div>
+      <div>
+        <input type="checkbox" id="bulk-selector" />
+        <label for="bulk-selector">None Selected</label>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: center">
+      <button class="danger" id="apply">Apply</button>
+    </div>
+
+    <hr />
+
+    <h2>Special Modes</h2>
+
+    <div
+      style="
+        display: flex;
+        justify-content: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      "
+    >
+      <button data-mode="speed">Speed</button>
+      <button data-mode="network">Network</button>
+      <button data-mode="poe">PoE</button>
+      <button data-mode="device_type">Device Type</button>
+      <button data-mode="cold_reset">"Cold boot"</button>
+      <button data-mode="warm_reset">"Warm boot"</button>
+      <button data-mode="boot_done">"Boot done"</button>
+    </div>
+  </body>
+</html>
